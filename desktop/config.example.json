@@ -1,0 +1,15 @@
+{
+  "api": {
+    "enabled": false,
+    "mode": "local",
+    "base_url": "http://127.0.0.1:11434/v1",
+    "api_key": "",
+    "model": "",
+    "timeout": 90
+  },
+  "test": {
+    "duration": 4.0,
+    "streams": 3,
+    "latency_attempts": 3
+  }
+}

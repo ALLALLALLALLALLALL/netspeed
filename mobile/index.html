@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>netspeed mobile</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: #0d1117; color: #e6edf3;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    padding: 16px 14px 40px;
+  }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { color: #8b949e; font-size: 12px; margin-bottom: 14px; }
+  .card { background: #161b22; border: 1px solid #21262d; border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .row { display: flex; gap: 10px; }
+  .metric { flex: 1; background: #0d1117; border-radius: 10px; padding: 10px; text-align: center; }
+  .metric .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .metric .l { font-size: 11px; color: #8b949e; margin-top: 2px; }
+  button {
+    width: 100%; border: 0; border-radius: 12px; padding: 15px;
+    font-size: 16px; font-weight: 700; background: #2f81f7; color: white; cursor: pointer;
+  }
+  button:disabled { opacity: .55; }
+  button.secondary { background: #21262d; color: #e6edf3; font-size: 14px; padding: 11px; }
+  .status { font-size: 12px; color: #8b949e; margin: 8px 0; min-height: 16px; }
+  .bar { height: 6px; background: #21262d; border-radius: 6px; overflow: hidden; margin: 10px 0; }
+  .bar > i { display: block; height: 100%; width: 0; background: #3fb950; transition: width .2s; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 7px 4px; border-bottom: 1px solid #21262d; }
+  th { color: #8b949e; font-weight: 500; }
+  .ok { color: #3fb950; } .bad { color: #f85149; }
+  pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.55; margin: 0; }
+  input {
+    width: 100%; background: #0d1117; color: #e6edf3; border: 1px solid #30363d;
+    border-radius: 9px; padding: 10px; font-size: 14px; margin: 4px 0 10px;
+  }
+  label { font-size: 12px; color: #8b949e; }
+  .hint { font-size: 11px; color: #8b949e; line-height: 1.5; }
+  details summary { cursor: pointer; color: #8b949e; font-size: 13px; }
+</style>
+</head>
+<body>
+  <h1>netspeed mobile</h1>
+  <div class="sub">手机浏览器实测 · 失败不隐藏 · 游戏节点由电脑主机探测</div>
+
+  <div class="card">
+    <div class="row">
+      <div class="metric"><div class="v" id="dl">-</div><div class="l">互联网下载 Mbps</div></div>
+      <div class="metric"><div class="v" id="ul">-</div><div class="l">互联网上传 Mbps</div></div>
+      <div class="metric"><div class="v" id="lat">-</div><div class="l">延迟 ms</div></div>
+    </div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="status" id="status">就绪</div>
+    <button id="start">开始测速</button>
+    <div class="hint" style="margin-top:8px">
+      手机带宽由本页直接请求 Cloudflare 测得；游戏节点跨域受限，由电脑主机探测并单独标注。
+    </div>
+  </div>
+
+  <div class="card">
+    <b style="font-size:14px">局域网下载（手机 ← 电脑）</b>
+    <div class="hint" style="margin:6px 0">测手机到这台电脑的 Wi-Fi / 路由器速度，不走互联网。需要电脑保持本服务运行。</div>
+    <button id="localBtn" class="secondary">单独测试局域网下载</button>
+    <div class="status" id="localResult">未测试</div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <b style="font-size:14px">游戏节点延迟（电脑主机探测）</b>
+      <span class="hint" id="nodesState">未测试</span>
+    </div>
+    <table id="nodesTable">
+      <thead><tr><th>节点</th><th>状态</th><th>连接</th><th>首字节</th><th>丢包</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <b style="font-size:14px">总结</b>
+    <pre id="summary" style="margin-top:8px;color:#8b949e">测速后生成。</pre>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>云端 API 设置（手机版不支持本地模型）</summary>
+      <div style="margin-top:10px">
+        <label>Base URL</label>
+        <input id="base" placeholder="https://api.deepseek.com/v1">
+        <label>API Key</label>
+        <input id="key" type="password" placeholder="sk-...">
+        <label>模型名</label>
+        <input id="model" placeholder="deepseek-chat / gpt-4o-mini">
+        <button class="secondary" id="saveCfg">保存到电脑</button>
+        <div class="hint" id="cfgState" style="margin-top:8px">未配置</div>
+      </div>
+    </details>
+  </div>
+
+<script>
+const CF = "https://speed.cloudflare.com/__down";
+const CF_UP = "https://speed.cloudflare.com/__up";
+const $ = id => document.getElementById(id);
+let report = {};
+
+function setStatus(s) { $("status").textContent = s; }
+function setBar(p) { $("bar").style.width = Math.max(0, Math.min(100, p)) + "%"; }
+function fmt(v, d = 2) { return (v === null || v === undefined || isNaN(v)) ? "-" : Number(v).toFixed(d); }
+
+async function testLatency() {
+  const vals = [];
+  try { await fetch(CF + "?bytes=1&w=" + Math.random(), { cache: "no-store" }); } catch (e) {}
+  for (let i = 0; i < 5; i++) {
+    const t = performance.now();
+    try {
+      await fetch(CF + "?bytes=1&r=" + Math.random(), { cache: "no-store" });
+      vals.push(performance.now() - t);
+    } catch (e) { /* recorded as loss */ }
+  }
+  const median = vals.length ? vals.slice().sort((a,b)=>a-b)[Math.floor(vals.length/2)] : null;
+  const jitter = vals.length > 1 ? Math.sqrt(vals.reduce((s,v)=>s+(v-median)**2,0)/vals.length) : 0;
+  return { median, jitter, samples: vals.length, loss_pct: Math.round((5-vals.length)*100/5) };
+}
+
+async function testDownload() {
+  const duration = 4000;
+  const ctrl = new AbortController();
+  const t0 = performance.now();
+  let bytes = 0, error = null;
+  try {
+    const res = await fetch(CF + "?bytes=25000000&r=" + Math.random(), { cache: "no-store", signal: ctrl.signal });
+    const reader = res.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.length;
+      setBar(Math.min(35, 10 + (performance.now() - t0) / duration * 25));
+      if (performance.now() - t0 > duration) { ctrl.abort(); break; }
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") error = String(e);
+  }
+  const sec = (performance.now() - t0) / 1000;
+  return { mbps: bytes ? bytes * 8 / sec / 1e6 : null, megabytes: bytes / 1e6, seconds: sec, error };
+}
+
+async function testUpload() {
+  const duration = 4000;
+  const chunk = new Uint8Array(1024 * 1024);
+  const t0 = performance.now();
+  let bytes = 0, error = null;
+  while (performance.now() - t0 < duration) {
+    try {
+      await fetch(CF_UP, { method: "POST", body: chunk, cache: "no-store" });
+      bytes += chunk.length;
+      setBar(Math.min(75, 45 + (performance.now() - t0) / duration * 30));
+    } catch (e) { error = String(e); break; }
+  }
+  const sec = (performance.now() - t0) / 1000;
+  return { mbps: bytes ? bytes * 8 / sec / 1e6 : null, megabytes: bytes / 1e6, seconds: sec, error };
+}
+
+async function testLocal() {
+  const duration = 4000;
+  const ctrl = new AbortController();
+  const t0 = performance.now();
+  let bytes = 0, error = null;
+  try {
+    const res = await fetch("/localfile?mb=80&r=" + Math.random(), { cache: "no-store", signal: ctrl.signal });
+    const reader = res.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.length;
+      if (performance.now() - t0 > duration) { ctrl.abort(); break; }
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") error = String(e);
+  }
+  const sec = (performance.now() - t0) / 1000;
+  return { mbps: bytes ? bytes * 8 / sec / 1e6 : null, megabytes: bytes / 1e6, seconds: sec, error };
+}
+
+async function loadNodes() {
+  $("nodesState").textContent = "探测中…";
+  try {
+    const res = await fetch("/api/nodes", { method: "POST", body: "{}" });
+    const data = await res.json();
+    const tbody = $("nodesTable").querySelector("tbody");
+    tbody.innerHTML = "";
+    for (const n of data.nodes || []) {
+      const tr = document.createElement("tr");
+      const ok = n.status && n.status < 500;
+      tr.innerHTML = `<td>${n.name}</td>
+        <td class="${ok ? "ok" : "bad"}">${n.status ?? "ERR"}</td>
+        <td>${fmt(n.connect_ms,1)}</td>
+        <td>${fmt(n.ttfb_ms,1)}</td>
+        <td>${n.loss_pct ?? 0}%</td>`;
+      tbody.appendChild(tr);
+    }
+    $("nodesState").textContent = "完成";
+  } catch (e) {
+    $("nodesState").textContent = "失败: " + e;
+  }
+}
+
+async function doSummary() {
+  $("summary").textContent = "生成中…";
+  try {
+    const res = await fetch("/api/summary", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ report })
+    });
+    const data = await res.json();
+    let text = data.rule || "";
+    if (data.ai) text += "\n\nAI 总结：\n" + data.ai;
+    else if (data.error) text += "\n\nAI 总结失败：" + data.error;
+    $("summary").textContent = text;
+  } catch (e) {
+    $("summary").textContent = "总结请求失败: " + e;
+  }
+}
+
+async function run() {
+  const btn = $("start");
+  btn.disabled = true; btn.textContent = "测速中…";
+  $("dl").textContent = "-"; $("ul").textContent = "-"; $("lat").textContent = "-";
+  report = {};
+  try {
+    setStatus("测试手机延迟…"); setBar(5);
+    report.latency = await testLatency();
+    $("lat").textContent = fmt(report.latency.median, 1);
+
+    setStatus("测试手机下载…"); setBar(10);
+    report.download = await testDownload();
+    $("dl").textContent = fmt(report.download.mbps);
+
+    setStatus("测试手机上传…"); setBar(45);
+    report.upload = await testUpload();
+    $("ul").textContent = fmt(report.upload.mbps);
+
+    setStatus("测试局域网下载（手机←电脑）…"); setBar(65);
+    report.local = await testLocal();
+    $("localResult").textContent = report.local.mbps
+      ? `${report.local.mbps.toFixed(2)} Mbps · ${report.local.megabytes.toFixed(1)} MB / ${report.local.seconds.toFixed(1)}s`
+      : "局域网下载失败";
+
+    setStatus("探测游戏节点（电脑主机）…"); setBar(80);
+    await loadNodes();
+
+    setStatus("生成总结…"); setBar(92);
+    await doSummary();
+
+    setBar(100); setStatus("完成");
+  } catch (e) {
+    setStatus("失败: " + e);
+  } finally {
+    btn.disabled = false; btn.textContent = "重新测速";
+  }
+}
+
+async function loadCfg() {
+  try {
+    const r = await fetch("/api/config");
+    const c = await r.json();
+    $("base").value = c.base_url || "";
+    $("model").value = c.model || "";
+    $("cfgState").textContent = c.has_key ? "已保存 key（不回显）" : "未配置 key";
+  } catch (e) {}
+}
+
+$("start").addEventListener("click", run);
+$("localBtn").addEventListener("click", async () => {
+  $("localBtn").disabled = true;
+  $("localResult").textContent = "测试中…";
+  try {
+    const r = await testLocal();
+    $("localResult").textContent = r.mbps
+      ? `${r.mbps.toFixed(2)} Mbps · ${r.megabytes.toFixed(1)} MB / ${r.seconds.toFixed(1)}s`
+      : "局域网下载失败";
+  } finally { $("localBtn").disabled = false; }
+});
+$("saveCfg").addEventListener("click", async () => {
+  const body = { base_url: $("base").value.trim(), model: $("model").value.trim(), api_key: $("key").value.trim() };
+  try {
+    const r = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const d = await r.json();
+    $("cfgState").textContent = d.ok ? "已保存（key 只存在电脑上）" : "保存失败";
+    $("key").value = "";
+  } catch (e) { $("cfgState").textContent = "保存失败: " + e; }
+});
+loadCfg();
+</script>
+</body>
+</html>
