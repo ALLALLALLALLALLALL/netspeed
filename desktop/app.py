@@ -31,12 +31,24 @@ class App(tk.Tk):
         self.geometry("980x760")
         self.minsize(820, 620)
         self.configure(bg=BG)
+        self._set_window_icon()
         self.cfg = load_config()
         self.report = None
         self.queue: "queue.Queue[tuple]" = queue.Queue()
         self.worker = None
         self._build()
         self.after(100, self._poll)
+
+    def _set_window_icon(self) -> None:
+        try:
+            base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+            path = os.path.join(base, "icon.png")
+            if os.path.exists(path):
+                img = tk.PhotoImage(file=path)
+                self.iconphoto(True, img)
+                self._icon_img = img
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ UI
     def _build(self) -> None:
